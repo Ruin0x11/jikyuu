@@ -56,7 +56,7 @@ jikyuu -e markotto@twitter.com=markdotto@gmail.com \
 
 Use `--format json` (`-f`) to output the data as a JSON array.
 
-```json
+```json5
 [
   {
     "email": "markdotto@gmail.com",
@@ -71,7 +71,7 @@ Use `--format json` (`-f`) to output the data as a JSON array.
     "commit_count": 1431
   },
 
-  ...
+  // ...
 
   {
     "email": null,
