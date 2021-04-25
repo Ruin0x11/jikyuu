@@ -6,13 +6,18 @@ It is a direct port of [git-hours](https://github.com/kimmobrunfeldt/git-hours),
 
 Note that the information provided is only a rough estimate.
 
+## Installation
+
+```sh
+cargo install jikyuu
+```
+
 ## Example
 
 ``` sh
 git clone https://github.com/twbs/bootstrap
 cd bootstrap
 jikyuu
-
 ```
 
 ```
