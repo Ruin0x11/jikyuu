@@ -1,9 +1,15 @@
 [package]
 name = "jikyuu"
+description = "Estimate the amount of time you've spent working on a Git repository"
 version = "0.1.0"
 edition = "2018"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+authors = ["Ruin0x11 <nonbirithm@fastmail.com>"]
+license = "MIT"
+readme = "README.md"
+homepage = "https://github.com/Ruin0x11/jikyuu"
+repository = "https://github.com/Ruin0x11/jikyuu"
+keywords = ["cli", "utility", "git"]
+categories = ["command-line-utilities"]
 
 [dependencies]
 git2 = "0.13.17"
