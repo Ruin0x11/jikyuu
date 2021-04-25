@@ -94,7 +94,7 @@ Run the following command to estimate the time spent for the provided Git reposi
 jikyuu /path/to/git/repo/
 ```
 
-The path must point to the root of the Git repo, not any subdirectories inside it.
+The path must point to the root of the Git repo, not any subdirectories inside of it.
 
 Extended usage:
 
