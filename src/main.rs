@@ -413,24 +413,37 @@ fn estimate_author_times(config: &Config, commits: Vec<Commit>) -> Vec<CommitHou
         result.push(estimate_author_time(author_commits, Some(email), &config.max_commit_diff, &config.first_commit_addition));
     }
 
+    result.sort_by(|a, b| b.duration.cmp(&a.duration));
+
     result
 }
 
 fn print_results(times: &Vec<CommitHours>) {
     let mut table = Table::new();
-    table.set_format(*format::consts::FORMAT_NO_BORDER_LINE_SEPARATOR);
 
-    table.set_titles(row!["Author", "Commits", "Estimated Hours"]);
+    let format = format::FormatBuilder::new()
+        .column_separator('|')
+        .borders('|')
+        .separators(&[format::LinePosition::Top,
+                      format::LinePosition::Bottom],
+                    format::LineSeparator::new('-', '+', '+', '+'))
+        .padding(1, 1)
+        .build();
+    table.set_format(format);
+
+    table.set_titles(row!["Author", "Email", "Commits", "Estimated Hours"]);
+    table.add_empty_row();
 
     let mut total_estimated_hours = 0.0;
     let mut total_commits = 0;
     for time in times.iter() {
-        let author = match &time.email {
-            Some(email) => match &time.author_name {
-                Some(author) => format!("{} ({})", author, email),
-                None => email.clone()
-            },
-            None => "(none)".to_string()
+        let author = match &time.author_name {
+            Some(n) => n,
+            None => ""
+        };
+        let email = match &time.email {
+            Some(email) => email,
+            None => "(none)"
         };
         let commits = time.commit_count;
         let estimated_hours = (time.duration.num_minutes() as f32) / 60.0;
@@ -438,12 +451,12 @@ fn print_results(times: &Vec<CommitHours>) {
         total_commits += commits;
         total_estimated_hours += estimated_hours;
 
-        table.add_row(row![author, commits, estimated_hours]);
+        table.add_row(row![author, email, commits, estimated_hours]);
     }
 
     table.add_empty_row();
 
-    table.add_row(row!["Total", total_commits, total_estimated_hours]);
+    table.add_row(row!["Total", "", total_commits, total_estimated_hours]);
 
     table.printstd();
 }
