@@ -13,6 +13,9 @@ git clone https://github.com/twbs/bootstrap
 cd bootstrap
 jikyuu
 
+```
+
+```
 +----------------+-------------------------+---------+-----------------+
 | Author         | Email                   | Commits | Estimated Hours |
 |                |                         |         |                 |
@@ -36,6 +39,9 @@ jikyuu -e markotto@twitter.com=markdotto@gmail.com \
        -e markd.otto@gmail.com=markdotto@gmail.com \
        -e mark.otto@twitter.com=markdotto@gmail.com
 
+```
+
+```
 +-----------------+---------------------------+---------+-----------------+
 | Author          | Email                     | Commits | Estimated Hours |
 |                 |                           |         |                 |
@@ -48,13 +54,41 @@ jikyuu -e markotto@twitter.com=markdotto@gmail.com \
 +-----------------+---------------------------+---------+-----------------+
 ```
 
+Use `--format json` (`-f`) to output the data as a JSON array.
+
+```json
+[
+  {
+    "email": "markdotto@gmail.com",
+    "author_name": "Mark Otto",
+    "hours": 4662.817,
+    "commit_count": 6880
+  },
+  {
+    "email": "xhmikosr@gmail.com",
+    "author_name": "XhmikosR",
+    "hours": 1612.4667,
+    "commit_count": 1431
+  },
+
+  ...
+
+  {
+    "email": null,
+    "author_name": "Total",
+    "hours": 14826.803,
+    "commit_count": 16639
+  }
+]
+```
+
 ## Algorithm
 
 See the [How it works](https://github.com/kimmobrunfeldt/git-hours#how-it-works) section of the git-hours README.
 
 ## Usage
 
-Run the following to analyze the provided Git repository.
+Run the following to analyze the provided Git repository. The path
 
 ```sh
 jikyuu /path/to/git/repo/
@@ -62,9 +96,9 @@ jikyuu /path/to/git/repo/
 
 Extended usage:
 
-``` sh
+```
 USAGE:
-    jikyuu [FLAGS] [OPTIONS] <PATH>
+    jikyuu [FLAGS] [OPTIONS] <REPO_PATH>
 
 FLAGS:
     -h, --help              Prints help information
@@ -76,9 +110,14 @@ OPTIONS:
     -t, --branch-type <local|remote>
             Type of branch that `branch` refers to. `local` means refs/heads/, `remote` means refs/remotes/.
 
-    -e, --email <OTHER_EMAIL=MAIN_EMAIL>...                              Associate an email with a contributor
+    -e, --email <OTHER_EMAIL=MAIN_EMAIL>...
+            Associate all commits that have a secondary email with a primary email
+
     -a, --first-commit-add <MINUTES>
             How many minutes first commit of session should add to total [default: 120]
+
+    -f, --format <format>
+             [default: stdout]  [possible values: Stdout, Json]
 
     -d, --max-commit-diff <MINUTES>
             Maximum difference in minutes between commits counted to one session [default: 120]
@@ -89,6 +128,9 @@ OPTIONS:
     -u, --until <always|today|yesterday|thisweek|lastweek|YYYY-mm-dd>
             Analyze data until certain date [default: always]
 
+
+ARGS:
+    <REPO_PATH>    Root path of the Git repository to analyze.
 ```
 
 ## License

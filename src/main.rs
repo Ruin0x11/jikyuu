@@ -139,7 +139,7 @@ fn get_app<'a, 'b>() -> App<'a, 'b> {
     App::new("jikyuu")
         .version(crate_version!())
         .author(crate_authors!())
-        .about("Estimate the amount of time spent on a git repository")
+        .about("Estimate the amount of time spent on a Git repository")
         .arg(Arg::with_name("max-commit-diff")
              .long("max-commit-diff")
              .short("d")
@@ -171,7 +171,7 @@ fn get_app<'a, 'b>() -> App<'a, 'b> {
         .arg(Arg::with_name("email")
              .long("email")
              .short("e")
-             .help("Associate an email with a contributor")
+             .help("Associate all commits that have a secondary email with a primary email")
              .takes_value(true)
              .multiple(true)
              .number_of_values(1)
@@ -199,8 +199,8 @@ fn get_app<'a, 'b>() -> App<'a, 'b> {
              .possible_values(&OutputFormat::variants())
              .case_insensitive(true)
              .default_value("stdout"))
-        .arg(Arg::with_name("PATH")
-             .help("Git repository to analyze.")
+        .arg(Arg::with_name("REPO_PATH")
+             .help("Root path of the Git repository to analyze.")
              .required(true)
              .index(1))
 }
@@ -291,7 +291,7 @@ fn to_config(matches: ArgMatches) -> Result<Config> {
 
     let merge_requests = matches.is_present("merge-requests");
 
-    let git_repo_path = matches.value_of("PATH").unwrap();
+    let git_repo_path = matches.value_of("REPO_PATH").unwrap();
 
     let aliases = match matches.values_of("email") {
         Some(vs) => {
