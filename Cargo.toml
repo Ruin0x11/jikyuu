@@ -1,7 +1,7 @@
 [package]
 name = "jikyuu"
 description = "Estimate the amount of time you've spent working on a Git repository"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2018"
 authors = ["Ruin0x11 <nonbirithm@fastmail.com>"]
 license = "MIT"
