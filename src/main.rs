@@ -11,7 +11,7 @@ use std::path::PathBuf;
 use anyhow::{anyhow, Result};
 use chrono::{Local, Utc, Weekday, NaiveDate, NaiveTime, NaiveDateTime, Datelike, Duration, TimeZone};
 use regex::Regex;
-use git2::{Repository, Commit};
+use git2::{Repository, Commit, BranchType};
 use clap::{Arg, App, ArgMatches, crate_version, crate_authors};
 use prettytable::{format, Table, row, cell};
 
@@ -70,7 +70,7 @@ impl FromStr for CommitTimeBound {
             x => {
                 match NaiveDate::from_str(x) {
                     Ok(date) => Ok(Self::Date(date)),
-                    Err(_) => Err(error::Error::new(String::from(x)))
+                    Err(_) => Err(error::Error::new(format!("Could not parse date '{}' using YYYY-mm-dd format", x)))
                 }
             }
         }
@@ -114,7 +114,11 @@ struct Config {
     /// ("linus@torvalds.com": "linus@linux.com")
     email_aliases: HashMap<String, String>,
 
-    branch: Option<String>
+    /// Branch to filter commits by.
+    branch: Option<String>,
+
+    /// Type of branch that `branch` refers to.
+    branch_type: BranchType
 }
 
 fn get_app<'a, 'b>() -> App<'a, 'b> {
@@ -141,14 +145,14 @@ fn get_app<'a, 'b>() -> App<'a, 'b> {
              .short("s")
              .help("Analyze data since certain date")
              .takes_value(true)
-             .value_name("[always|today|yesterday|thisweek|lastweek|yyyy-mm-dd]")
+             .value_name("always|today|yesterday|thisweek|lastweek|YYYY-mm-dd")
              .default_value("always"))
         .arg(Arg::with_name("until")
              .long("until")
              .short("u")
              .help("Analyze data until certain date")
              .takes_value(true)
-             .value_name("[always|today|yesterday|thisweek|lastweek|yyyy-mm-dd]")
+             .value_name("always|today|yesterday|thisweek|lastweek|YYYY-mm-dd")
              .default_value("always"))
         .arg(Arg::with_name("email")
              .long("email")
@@ -167,6 +171,13 @@ fn get_app<'a, 'b>() -> App<'a, 'b> {
              .short("b")
              .takes_value(true)
              .help("Analyze only data on the specified branch"))
+        .arg(Arg::with_name("branch-type")
+             .long("branch-type")
+             .short("t")
+             .takes_value(true)
+             .value_name("local|remote")
+             .requires("branch")
+             .help("Type of branch that `branch` refers to. `local` means refs/heads/, `remote` means refs/remotes/."))
         .arg(Arg::with_name("PATH")
              .help("Git repository to analyze.")
              .required(true)
@@ -178,18 +189,23 @@ fn parse_email_alias(s: &str) -> Result<(String, String)> {
     match splitter.next() {
         Some(a) => match splitter.next() {
             Some(b) => Ok((a.to_string(), b.to_string())),
-            None => Err(anyhow!("Could not parse email alias {}", s))
+            None => Err(anyhow!("Could not parse email alias '{}'", s))
         },
-        None => Err(anyhow!("Could not parse email alias {}", s))
+        None => Err(anyhow!("Could not parse email alias '{}'", s))
     }
 }
 
-fn get_commits<'repo>(branch: &Option<String>, repo: &'repo Repository) -> Result<Vec<Commit<'repo>>> {
+fn get_commits<'repo>(branch: &Option<String>, branch_kind: BranchType, repo: &'repo Repository) -> Result<Vec<Commit<'repo>>> {
     let refs = repo.references()?;
+
+    let ref_prefix = match branch_kind {
+        BranchType::Local => "heads",
+        BranchType::Remote => "remotes",
+    };
 
     let branch_refs = match branch {
         Some(b) => {
-            let s = format!("refs/heads/{}", b);
+            let s = format!("refs/{}/{}", ref_prefix, b);
             let mut vec = Vec::new();
             for r in refs {
                 let r = r?;
@@ -204,7 +220,7 @@ fn get_commits<'repo>(branch: &Option<String>, repo: &'repo Repository) -> Resul
         }
         None => {
             let mut vec = Vec::new();
-            let rx = Regex::new("refs/heads/.*")?;
+            let rx = Regex::new(&format!("refs/{}/.*", ref_prefix))?;
             for r in refs {
                 let r = r?;
                 let name = r.name();
@@ -273,6 +289,13 @@ fn to_config(matches: ArgMatches) -> Result<Config> {
 
     let branch = matches.value_of("branch").map(|b| b.to_string());
 
+    let branch_type = match matches.value_of("branch-type") {
+        None => BranchType::Local,
+        Some("local") => BranchType::Local,
+        Some("remote") => BranchType::Remote,
+        Some(x) => return Err(anyhow!("Invalid branch type '{}'", x))
+    };
+
     Ok(Config {
         max_commit_diff: Duration::minutes(max_commit_diff.into()),
         first_commit_addition: Duration::minutes(first_commit_addition.into()),
@@ -281,7 +304,8 @@ fn to_config(matches: ArgMatches) -> Result<Config> {
         merge_requests: merge_requests,
         git_path: PathBuf::from(git_path),
         email_aliases: aliases,
-        branch: branch
+        branch: branch,
+        branch_type: branch_type
     })
 }
 
@@ -296,13 +320,13 @@ fn filter_commits<'repo>(config: &Config, commits: Vec<Commit<'repo>>) -> Vec<Co
         let time = commit.time();
         if let Some(bound) = since_local {
             let dt = Utc.timestamp(time.seconds(), 0);
-            if dt > bound {
+            if dt < bound {
                 return false
             }
         }
         if let Some(bound) = until_local {
             let dt = Utc.timestamp(time.seconds(), 0);
-            if dt < bound {
+            if dt > bound {
                 return false
             }
         }
@@ -427,13 +451,26 @@ fn print_results(times: &Vec<CommitHours>) {
 fn jikyuu(config: &Config) -> Result<()> {
     let repo = Repository::init(&config.git_path)?;
 
-    let commits = get_commits(&config.branch, &repo)?;
+    let commits = get_commits(&config.branch, config.branch_type, &repo)?;
 
     let filtered_commits = filter_commits(&config, commits);
 
     let by_author = estimate_author_times(&config, filtered_commits);
 
-    print_results(&by_author);
+    if by_author.len() == 0 {
+        match &config.branch {
+            Some(b) => {
+                let branch_type = match config.branch_type {
+                    BranchType::Local => "local",
+                    BranchType::Remote => "remote",
+                };
+                println!("No commits found for branch '{}' ({}).", b, branch_type)
+            },
+            None => println!("No commits found.")
+        }
+    } else {
+        print_results(&by_author);
+    }
 
     Ok(())
 }
@@ -445,6 +482,7 @@ fn main() -> Result<()> {
         Ok(conf) => jikyuu(&conf),
         Err(e) => {
             get_app().print_long_help()?;
+            println!("");
             println!("Error: {}", e);
             Ok(())
         }
