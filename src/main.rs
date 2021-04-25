@@ -6,6 +6,7 @@ extern crate prettytable;
 extern crate serde_json;
 extern crate serde;
 
+use std::cmp::Ordering;
 use std::str::FromStr;
 use std::string::ToString;
 use std::collections::{HashSet, HashMap};
@@ -437,7 +438,13 @@ fn estimate_author_times(config: &Config, commits: Vec<Commit>) -> Vec<CommitHou
         result.push(estimate_author_time(author_commits, Some(email), &config.max_commit_diff, &config.first_commit_addition));
     }
 
-    result.sort_by(|a, b| b.duration.cmp(&a.duration));
+    result.sort_by(|a, b| {
+        let ord = b.duration.cmp(&a.duration);
+        if ord != Ordering::Equal {
+            return ord
+        }
+        b.commit_count.cmp(&a.commit_count)
+    });
 
     result
 }
