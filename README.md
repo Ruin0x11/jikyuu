@@ -1,8 +1,8 @@
-# jikyuu
+# jikyuu (時給)
 
 A tool to estimate the amount of time spent working on a Git repository.
 
-It is a direct port of [git-hours](https://github.com/kimmobrunfeldt/git-hours), written in Node, because the code was many years out of date and no longer builds.
+It is a direct port of [git-hours](https://github.com/kimmobrunfeldt/git-hours), written in Node.js, because the code was many years out of date and no longer builds.
 
 Note that the information provided is only a rough estimate.
 
