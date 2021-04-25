@@ -88,11 +88,13 @@ See the [How it works](https://github.com/kimmobrunfeldt/git-hours#how-it-works)
 
 ## Usage
 
-Run the following to analyze the provided Git repository. The path
+Run the following command to estimate the time spent for the provided Git repository.
 
 ```sh
 jikyuu /path/to/git/repo/
 ```
+
+The path must point to the root of the Git repo, not any subdirectories inside it.
 
 Extended usage:
 
