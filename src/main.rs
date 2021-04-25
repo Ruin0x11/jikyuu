@@ -3,6 +3,8 @@ extern crate regex;
 extern crate anyhow;
 extern crate clap;
 extern crate prettytable;
+extern crate serde_json;
+extern crate serde;
 
 use std::str::FromStr;
 use std::string::ToString;
@@ -12,8 +14,9 @@ use anyhow::{anyhow, Result};
 use chrono::{Local, Utc, Weekday, NaiveDate, NaiveTime, NaiveDateTime, Datelike, Duration, TimeZone};
 use regex::Regex;
 use git2::{Repository, Commit, BranchType};
-use clap::{Arg, App, ArgMatches, crate_version, crate_authors};
+use clap::{Arg, App, ArgMatches, crate_version, crate_authors, arg_enum, value_t};
 use prettytable::{format, Table, row, cell};
+use serde::{Deserialize, Serialize};
 
 mod error;
 
@@ -90,6 +93,14 @@ impl ToString for CommitTimeBound {
     }
 }
 
+arg_enum! {
+    #[derive(PartialEq, Debug)]
+    enum OutputFormat {
+        Stdout,
+        Json
+    }
+}
+
 struct Config {
     /// Maximum time diff between 2 subsequent commits in minutes which are
     /// counted to be in the same coding "session"
@@ -108,7 +119,7 @@ struct Config {
     merge_requests: bool,
 
     /// Git repo
-    git_path: PathBuf,
+    git_repo_path: PathBuf,
 
     /// Aliases of emails for grouping the same activity as one person
     /// ("linus@torvalds.com": "linus@linux.com")
@@ -118,7 +129,10 @@ struct Config {
     branch: Option<String>,
 
     /// Type of branch that `branch` refers to.
-    branch_type: BranchType
+    branch_type: BranchType,
+
+    /// Output format.
+    output_format: OutputFormat
 }
 
 fn get_app<'a, 'b>() -> App<'a, 'b> {
@@ -178,6 +192,13 @@ fn get_app<'a, 'b>() -> App<'a, 'b> {
              .value_name("local|remote")
              .requires("branch")
              .help("Type of branch that `branch` refers to. `local` means refs/heads/, `remote` means refs/remotes/."))
+        .arg(Arg::with_name("format")
+             .long("format")
+             .short("f")
+             .takes_value(true)
+             .possible_values(&OutputFormat::variants())
+             .case_insensitive(true)
+             .default_value("stdout"))
         .arg(Arg::with_name("PATH")
              .help("Git repository to analyze.")
              .required(true)
@@ -270,7 +291,7 @@ fn to_config(matches: ArgMatches) -> Result<Config> {
 
     let merge_requests = matches.is_present("merge-requests");
 
-    let git_path = matches.value_of("PATH").unwrap();
+    let git_repo_path = matches.value_of("PATH").unwrap();
 
     let aliases = match matches.values_of("email") {
         Some(vs) => {
@@ -296,16 +317,19 @@ fn to_config(matches: ArgMatches) -> Result<Config> {
         Some(x) => return Err(anyhow!("Invalid branch type '{}'", x))
     };
 
+    let output_format = value_t!(matches, "format", OutputFormat).unwrap();
+
     Ok(Config {
         max_commit_diff: Duration::minutes(max_commit_diff.into()),
         first_commit_addition: Duration::minutes(first_commit_addition.into()),
         since: since,
         until: until,
         merge_requests: merge_requests,
-        git_path: PathBuf::from(git_path),
+        git_repo_path: PathBuf::from(git_repo_path),
         email_aliases: aliases,
         branch: branch,
-        branch_type: branch_type
+        branch_type: branch_type,
+        output_format: output_format
     })
 }
 
@@ -418,7 +442,20 @@ fn estimate_author_times(config: &Config, commits: Vec<Commit>) -> Vec<CommitHou
     result
 }
 
-fn print_results(times: &Vec<CommitHours>) {
+fn get_totals(times: &Vec<CommitHours>) -> (f32, usize) {
+    let mut total_estimated_hours = 0.0;
+    let mut total_commits = 0;
+    for time in times.iter() {
+        let commits = time.commit_count;
+        let estimated_hours = (time.duration.num_minutes() as f32) / 60.0;
+        total_commits += commits;
+        total_estimated_hours += estimated_hours;
+    }
+
+    (total_estimated_hours, total_commits)
+}
+
+fn print_results_stdout(times: &Vec<CommitHours>) -> Result<()> {
     let mut table = Table::new();
 
     let format = format::FormatBuilder::new()
@@ -434,8 +471,6 @@ fn print_results(times: &Vec<CommitHours>) {
     table.set_titles(row!["Author", "Email", "Commits", "Estimated Hours"]);
     table.add_empty_row();
 
-    let mut total_estimated_hours = 0.0;
-    let mut total_commits = 0;
     for time in times.iter() {
         let author = match &time.author_name {
             Some(n) => n,
@@ -448,21 +483,67 @@ fn print_results(times: &Vec<CommitHours>) {
         let commits = time.commit_count;
         let estimated_hours = (time.duration.num_minutes() as f32) / 60.0;
 
-        total_commits += commits;
-        total_estimated_hours += estimated_hours;
-
         table.add_row(row![author, email, commits, estimated_hours]);
     }
 
     table.add_empty_row();
 
+    let (total_estimated_hours, total_commits) = get_totals(times);
     table.add_row(row!["Total", "", total_commits, total_estimated_hours]);
 
     table.printstd();
+
+    Ok(())
 }
 
-fn jikyuu(config: &Config) -> Result<()> {
-    let repo = Repository::init(&config.git_path)?;
+#[derive(Clone, Serialize, Deserialize)]
+struct CommitHoursJson {
+    email: Option<String>,
+    author_name: Option<String>,
+    hours: f32,
+    commit_count: usize
+}
+
+impl From<&CommitHours> for CommitHoursJson {
+    fn from(time: &CommitHours) -> Self {
+        CommitHoursJson {
+            email: time.email.clone(),
+            author_name: time.author_name.clone(),
+            hours: time.duration.num_minutes() as f32 / 60.0,
+            commit_count: time.commit_count,
+        }
+    }
+}
+
+fn print_results_json(times: &Vec<CommitHours>) -> Result<()> {
+    let mut times_json = times.iter().map(CommitHoursJson::from).collect::<Vec<_>>();
+
+    let (total_estimated_hours, total_commits) = get_totals(times);
+    times_json.push(CommitHoursJson {
+        email: None,
+        author_name: Some(String::from("Total")),
+        hours: total_estimated_hours,
+        commit_count: total_commits
+    });
+
+    let json = serde_json::to_string_pretty(&times_json)?;
+
+    println!("{}", json);
+
+    Ok(())
+}
+
+fn print_results(times: &Vec<CommitHours>, output_format: &OutputFormat) -> Result<()> {
+    match output_format {
+        OutputFormat::Stdout => print_results_stdout(times),
+        OutputFormat::Json => print_results_json(times)
+    }
+}
+
+type ExitCode = i32;
+
+fn jikyuu(config: &Config) -> Result<ExitCode> {
+    let repo = Repository::init(&config.git_repo_path)?;
 
     let commits = get_commits(&config.branch, config.branch_type, &repo)?;
 
@@ -477,27 +558,32 @@ fn jikyuu(config: &Config) -> Result<()> {
                     BranchType::Local => "local",
                     BranchType::Remote => "remote",
                 };
-                println!("No commits found for branch '{}' ({}).", b, branch_type)
+                eprintln!("No commits found for branch '{}' ({}).", b, branch_type)
             },
-            None => println!("No commits found.")
+            None => eprintln!("No commits found.")
         }
+        Ok(1)
     } else {
-        print_results(&by_author);
+        print_results(&by_author, &config.output_format)?;
+        Ok(0)
     }
-
-    Ok(())
 }
 
-fn main() -> Result<()> {
+fn run_app() -> Result<ExitCode> {
     let matches = get_app().get_matches();
 
-    match to_config(matches) {
-        Ok(conf) => jikyuu(&conf),
+    let config = to_config(matches)?;
+
+    jikyuu(&config)
+}
+
+fn main() {
+    let exit_code = match run_app() {
+        Ok(code) => code,
         Err(e) => {
-            get_app().print_long_help()?;
-            println!("");
-            println!("Error: {}", e);
-            Ok(())
+            eprintln!("Error: {}", e);
+            1
         }
-    }
+    };
+    std::process::exit(exit_code);
 }
