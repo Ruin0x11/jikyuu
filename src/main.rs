@@ -154,7 +154,7 @@ fn get_app<'a, 'b>() -> App<'a, 'b> {
              .help("How many minutes first commit of session should add to total")
              .takes_value(true)
              .value_name("MINUTES")
-             .default_value("120"))
+             .default_value("30"))
         .arg(Arg::with_name("since")
              .long("since")
              .short("s")
