@@ -203,6 +203,7 @@ fn get_app<'a, 'b>() -> App<'a, 'b> {
         .arg(Arg::with_name("REPO_PATH")
              .help("Root path of the Git repository to analyze.")
              .required(true)
+             .default_value(".")
              .index(1))
 }
 
