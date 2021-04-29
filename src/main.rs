@@ -371,6 +371,7 @@ fn filter_commits<'repo>(config: &Config, commits: Vec<Commit<'repo>>) -> Vec<Co
 struct CommitHours {
     email: Option<String>,
     author_name: Option<String>,
+    breakdown: HashMap<String, Duration>,
     duration: Duration,
     commit_count: usize
 }
@@ -380,16 +381,25 @@ fn estimate_author_time(mut commits: Vec<Commit>, email: Option<String>, max_com
 
     commits.sort_by(|a, b| a.time().cmp(&b.time()));
 
+    let mut coding_session_start = Utc.timestamp(commits[0].time().seconds(), 0).format("%Y-%m-%d");
     let len = commits.len() - 1;
     let all_but_last = commits.iter().enumerate().take(len);
+    let mut breakdown = HashMap::new();
     let duration = all_but_last.fold(Duration::minutes(0), |acc, (i, commit)| {
         let next_commit = commits.get(i+1).unwrap();
         let diff_seconds = next_commit.time().seconds() - commit.time().seconds();
         let dur = Duration::seconds(diff_seconds);
 
         if dur < *max_commit_diff {
+            breakdown.entry(coding_session_start.to_string())
+                .and_modify(|e| { *e = *e + dur })
+                .or_insert_with(|| dur);
             acc + dur
         } else {
+            coding_session_start = Utc.timestamp(commit.time().seconds(), 0).format("%Y-%m-%d");
+            breakdown.entry(coding_session_start.to_string())
+                .and_modify(|e| { *e = *e + *first_commit_addition })
+                .or_insert_with(|| dur);
             acc + *first_commit_addition
         }
     });
@@ -397,6 +407,7 @@ fn estimate_author_time(mut commits: Vec<Commit>, email: Option<String>, max_com
     CommitHours {
         email: email,
         author_name: author_name,
+        breakdown: breakdown,
         duration: duration,
         commit_count: commits.len()
     }
