@@ -519,15 +519,24 @@ fn print_results_stdout(times: &Vec<CommitHours>) -> Result<()> {
 struct CommitHoursJson {
     email: Option<String>,
     author_name: Option<String>,
+    breakdown: Option<HashMap<String, f32>>,
     hours: f32,
     commit_count: usize
 }
 
 impl From<&CommitHours> for CommitHoursJson {
     fn from(time: &CommitHours) -> Self {
+        let mut breakdown = HashMap::new();
+        //*(breakdown) = &(time.breakdown).into_iter().filter_map(|(key, value)| {
+        //    Some((key, value.num_minutes() as f32 / 60.0))
+        //}).collect();
+        for (key, value) in &(time.breakdown) {
+            breakdown.insert(key.to_owned(), value.num_minutes() as f32 / 60.0);
+        }
         CommitHoursJson {
             email: time.email.clone(),
             author_name: time.author_name.clone(),
+            breakdown: Some(breakdown),
             hours: time.duration.num_minutes() as f32 / 60.0,
             commit_count: time.commit_count,
         }
@@ -541,6 +550,7 @@ fn print_results_json(times: &Vec<CommitHours>) -> Result<()> {
     times_json.push(CommitHoursJson {
         email: None,
         author_name: Some(String::from("Total")),
+        breakdown: None,
         hours: total_estimated_hours,
         commit_count: total_commits
     });
