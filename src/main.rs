@@ -529,6 +529,59 @@ fn print_results_stdout(times: &Vec<CommitHours>) -> Result<()> {
     Ok(())
 }
 
+fn print_breakdown_results_stdout(times: &Vec<CommitHours>) -> Result<()> {
+    let mut table = Table::new();
+
+    let format = format::FormatBuilder::new()
+        .column_separator('|')
+        .borders('|')
+        .separators(&[format::LinePosition::Top,
+                      format::LinePosition::Bottom],
+                    format::LineSeparator::new('-', '+', '+', '+'))
+        .padding(1, 1)
+        .build();
+    table.set_format(format);
+
+    table.set_titles(row!["Author", "Email", "Commits", "Date", "Estimated Hours"]);
+    table.add_empty_row();
+
+    for time in times.iter() {
+        let author = match &time.author_name {
+            Some(n) => n,
+            None => ""
+        };
+        let email = match &time.email {
+            Some(email) => email,
+            None => "(none)"
+        };
+        let commits = time.commit_count;
+        let estimated_total_hours = (time.duration.num_minutes() as f32) / 60.0;
+
+        let mut first_row = true;
+        for (date, duration) in &(time.breakdown) {
+            let date = date.to_owned();
+            let work_time = duration.num_minutes() as f32 / 60.0;
+            if first_row {
+                table.add_row(row!["", "", "", date, work_time]);
+                first_row = false;
+            } else {
+                table.add_row(row!["", "", "", date, work_time]);
+            }
+        }
+        table.add_row(row![author, email, commits, "Total", estimated_total_hours]);
+        table.add_empty_row();
+    }
+
+    table.add_empty_row();
+
+    let (total_estimated_hours, total_commits) = get_totals(times);
+    table.add_row(row!["Total", "", total_commits, "", total_estimated_hours]);
+
+    table.printstd();
+
+    Ok(())
+}
+
 #[derive(Clone, Serialize, Deserialize)]
 struct CommitHoursJson {
     email: Option<String>,
@@ -573,9 +626,12 @@ fn print_results_json(times: &Vec<CommitHours>) -> Result<()> {
     Ok(())
 }
 
-fn print_results(times: &Vec<CommitHours>, output_format: &OutputFormat) -> Result<()> {
+fn print_results(times: &Vec<CommitHours>, output_format: &OutputFormat, display_breakdown: &bool) -> Result<()> {
     match output_format {
-        OutputFormat::Stdout => print_results_stdout(times),
+        OutputFormat::Stdout => match *display_breakdown {
+            true => print_breakdown_results_stdout(times),
+            false => print_results_stdout(times)
+        },
         OutputFormat::Json => print_results_json(times)
     }
 }
@@ -604,7 +660,7 @@ fn jikyuu(config: &Config) -> Result<ExitCode> {
         }
         Ok(1)
     } else {
-        print_results(&by_author, &config.output_format)?;
+        print_results(&by_author, &config.output_format, &config.display_breakdown)?;
         Ok(0)
     }
 }
