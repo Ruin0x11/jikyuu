@@ -557,16 +557,10 @@ fn print_breakdown_results_stdout(times: &Vec<CommitHours>) -> Result<()> {
         let commits = time.commit_count;
         let estimated_total_hours = (time.duration.num_minutes() as f32) / 60.0;
 
-        let mut first_row = true;
         for (date, duration) in &(time.breakdown) {
             let date = date.to_owned();
             let work_time = duration.num_minutes() as f32 / 60.0;
-            if first_row {
-                table.add_row(row!["", "", "", date, work_time]);
-                first_row = false;
-            } else {
-                table.add_row(row!["", "", "", date, work_time]);
-            }
+            table.add_row(row!["", "", "", date, work_time]);
         }
         table.add_row(row![author, email, commits, "Total", estimated_total_hours]);
         table.add_empty_row();
