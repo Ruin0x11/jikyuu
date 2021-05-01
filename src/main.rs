@@ -133,7 +133,10 @@ struct Config {
     branch_type: BranchType,
 
     /// Output format.
-    output_format: OutputFormat
+    output_format: OutputFormat,
+
+    // Display breakdown
+    display_breakdown: bool
 }
 
 fn get_app<'a, 'b>() -> App<'a, 'b> {
@@ -205,6 +208,11 @@ fn get_app<'a, 'b>() -> App<'a, 'b> {
              .required(true)
              .default_value(".")
              .index(1))
+        .arg(Arg::with_name("breakdown")
+            .long("breakdown")
+            .short("w")
+            .help("Display number of work hours per day.")
+            .takes_value(false))
 }
 
 fn parse_email_alias(s: &str) -> Result<(String, String)> {
@@ -292,6 +300,7 @@ fn to_config(matches: ArgMatches) -> Result<Config> {
     };
 
     let merge_requests = matches.is_present("merge-requests");
+    let display_breakdown = matches.is_present("breakdown");
 
     let git_repo_path = matches.value_of("REPO_PATH").unwrap();
 
@@ -331,7 +340,8 @@ fn to_config(matches: ArgMatches) -> Result<Config> {
         email_aliases: aliases,
         branch: branch,
         branch_type: branch_type,
-        output_format: output_format
+        output_format: output_format,
+        display_breakdown: display_breakdown
     })
 }
 
@@ -376,7 +386,7 @@ struct CommitHours {
     commit_count: usize
 }
 
-fn estimate_author_time(mut commits: Vec<Commit>, email: Option<String>, max_commit_diff: &Duration, first_commit_addition: &Duration) -> CommitHours {
+fn estimate_author_time(mut commits: Vec<Commit>, email: Option<String>, max_commit_diff: &Duration, first_commit_addition: &Duration, display_breakdown: &bool) -> CommitHours {
     let author_name = commits[0].author().name().map(|n| n.to_string());
 
     commits.sort_by(|a, b| a.time().cmp(&b.time()));
@@ -391,15 +401,19 @@ fn estimate_author_time(mut commits: Vec<Commit>, email: Option<String>, max_com
         let dur = Duration::seconds(diff_seconds);
 
         if dur < *max_commit_diff {
-            breakdown.entry(coding_session_start.to_string())
-                .and_modify(|e| { *e = *e + dur })
-                .or_insert_with(|| dur);
+            if *display_breakdown {
+                breakdown.entry(coding_session_start.to_string())
+                    .and_modify(|e| { *e = *e + dur })
+                    .or_insert_with(|| dur);
+            }
             acc + dur
         } else {
             coding_session_start = Utc.timestamp(commit.time().seconds(), 0).format("%Y-%m-%d");
-            breakdown.entry(coding_session_start.to_string())
-                .and_modify(|e| { *e = *e + *first_commit_addition })
-                .or_insert_with(|| *first_commit_addition);
+            if *display_breakdown {
+                breakdown.entry(coding_session_start.to_string())
+                    .and_modify(|e| { *e = *e + *first_commit_addition })
+                    .or_insert_with(|| *first_commit_addition);
+            }
             acc + *first_commit_addition
         }
     });
@@ -443,11 +457,11 @@ fn estimate_author_times(config: &Config, commits: Vec<Commit>) -> Vec<CommitHou
     let mut result = Vec::new();
 
     if no_email.len() > 0 {
-        result.push(estimate_author_time(no_email, None, &config.max_commit_diff, &config.first_commit_addition));
+        result.push(estimate_author_time(no_email, None, &config.max_commit_diff, &config.first_commit_addition, &config.display_breakdown));
     }
 
     for (email, author_commits) in by_email {
-        result.push(estimate_author_time(author_commits, Some(email), &config.max_commit_diff, &config.first_commit_addition));
+        result.push(estimate_author_time(author_commits, Some(email), &config.max_commit_diff, &config.first_commit_addition, &config.display_breakdown));
     }
 
     result.sort_by(|a, b| {
