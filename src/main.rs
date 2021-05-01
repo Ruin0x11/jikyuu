@@ -399,7 +399,7 @@ fn estimate_author_time(mut commits: Vec<Commit>, email: Option<String>, max_com
             coding_session_start = Utc.timestamp(commit.time().seconds(), 0).format("%Y-%m-%d");
             breakdown.entry(coding_session_start.to_string())
                 .and_modify(|e| { *e = *e + *first_commit_addition })
-                .or_insert_with(|| dur);
+                .or_insert_with(|| *first_commit_addition);
             acc + *first_commit_addition
         }
     });
@@ -527,9 +527,6 @@ struct CommitHoursJson {
 impl From<&CommitHours> for CommitHoursJson {
     fn from(time: &CommitHours) -> Self {
         let mut breakdown = HashMap::new();
-        //*(breakdown) = &(time.breakdown).into_iter().filter_map(|(key, value)| {
-        //    Some((key, value.num_minutes() as f32 / 60.0))
-        //}).collect();
         for (key, value) in &(time.breakdown) {
             breakdown.insert(key.to_owned(), value.num_minutes() as f32 / 60.0);
         }
