@@ -391,25 +391,35 @@ fn estimate_author_time(mut commits: Vec<Commit>, email: Option<String>, max_com
 
     commits.sort_by(|a, b| a.time().cmp(&b.time()));
 
+    //let lalala = Utc.timestamp(commits[commits.len() - 3].time().seconds(), 0).format("%Y-%m-%d");
+    //let lilili = Utc.timestamp(commits[commits.len() - 2].time().seconds(), 0).format("%Y-%m-%d");
+    //println!("just checking two last commits");
+    //println!("{}", lalala);
+    //println!("{}", lilili);
+
     let mut coding_session_start = Utc.timestamp(commits[0].time().seconds(), 0).format("%Y-%m-%d");
     let len = commits.len() - 1;
     let all_but_last = commits.iter().enumerate().take(len);
-    let breakdown = all_but_last.fold(HashMap::new(), |mut breakdown, (i, commit)| {
+    let mut breakdown = HashMap::new();
+    breakdown.entry(coding_session_start.to_string())
+        .or_insert_with(|| *first_commit_addition);
+
+    for (i, commit) in all_but_last {
         let next_commit = commits.get(i+1).unwrap();
         let diff_seconds = next_commit.time().seconds() - commit.time().seconds();
         let dur = Duration::seconds(diff_seconds);
+
         if dur < *max_commit_diff {
             breakdown.entry(coding_session_start.to_string())
                 .and_modify(|e| { *e = *e + dur })
                 .or_insert_with(|| dur);
         } else {
-            coding_session_start = Utc.timestamp(commit.time().seconds(), 0).format("%Y-%m-%d");
+            coding_session_start = Utc.timestamp(next_commit.time().seconds(), 0).format("%Y-%m-%d");
             breakdown.entry(coding_session_start.to_string())
                 .and_modify(|e| { *e = *e + *first_commit_addition })
                 .or_insert_with(|| *first_commit_addition);
         }
-        breakdown
-    });
+    };
 
     let duration = breakdown.values().fold(Duration::minutes(0), |acc, dur| {
         acc + *dur
