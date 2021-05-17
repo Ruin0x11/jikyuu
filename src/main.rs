@@ -394,28 +394,25 @@ fn estimate_author_time(mut commits: Vec<Commit>, email: Option<String>, max_com
     let mut coding_session_start = Utc.timestamp(commits[0].time().seconds(), 0).format("%Y-%m-%d");
     let len = commits.len() - 1;
     let all_but_last = commits.iter().enumerate().take(len);
-    let mut breakdown = HashMap::new();
-    let duration = all_but_last.fold(Duration::minutes(0), |acc, (i, commit)| {
+    let breakdown = all_but_last.fold(HashMap::new(), |mut breakdown, (i, commit)| {
         let next_commit = commits.get(i+1).unwrap();
         let diff_seconds = next_commit.time().seconds() - commit.time().seconds();
         let dur = Duration::seconds(diff_seconds);
-
         if dur < *max_commit_diff {
-            if *display_breakdown {
-                breakdown.entry(coding_session_start.to_string())
-                    .and_modify(|e| { *e = *e + dur })
-                    .or_insert_with(|| dur);
-            }
-            acc + dur
+            breakdown.entry(coding_session_start.to_string())
+                .and_modify(|e| { *e = *e + dur })
+                .or_insert_with(|| dur);
         } else {
             coding_session_start = Utc.timestamp(commit.time().seconds(), 0).format("%Y-%m-%d");
-            if *display_breakdown {
-                breakdown.entry(coding_session_start.to_string())
-                    .and_modify(|e| { *e = *e + *first_commit_addition })
-                    .or_insert_with(|| *first_commit_addition);
-            }
-            acc + *first_commit_addition
+            breakdown.entry(coding_session_start.to_string())
+                .and_modify(|e| { *e = *e + *first_commit_addition })
+                .or_insert_with(|| *first_commit_addition);
         }
+        breakdown
+    });
+
+    let duration = breakdown.values().fold(Duration::minutes(0), |acc, dur| {
+        acc + *dur
     });
 
     CommitHours {
