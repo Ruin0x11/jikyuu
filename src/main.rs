@@ -386,7 +386,7 @@ struct CommitHours {
     commit_count: usize
 }
 
-fn estimate_author_time(mut commits: Vec<Commit>, email: Option<String>, max_commit_diff: &Duration, first_commit_addition: &Duration, display_breakdown: &bool) -> CommitHours {
+fn estimate_author_time(mut commits: Vec<Commit>, email: Option<String>, max_commit_diff: &Duration, first_commit_addition: &Duration) -> CommitHours {
     let author_name = commits[0].author().name().map(|n| n.to_string());
 
     commits.sort_by(|a, b| a.time().cmp(&b.time()));
@@ -458,11 +458,11 @@ fn estimate_author_times(config: &Config, commits: Vec<Commit>) -> Vec<CommitHou
     let mut result = Vec::new();
 
     if no_email.len() > 0 {
-        result.push(estimate_author_time(no_email, None, &config.max_commit_diff, &config.first_commit_addition, &config.display_breakdown));
+        result.push(estimate_author_time(no_email, None, &config.max_commit_diff, &config.first_commit_addition));
     }
 
     for (email, author_commits) in by_email {
-        result.push(estimate_author_time(author_commits, Some(email), &config.max_commit_diff, &config.first_commit_addition, &config.display_breakdown));
+        result.push(estimate_author_time(author_commits, Some(email), &config.max_commit_diff, &config.first_commit_addition));
     }
 
     result.sort_by(|a, b| {
