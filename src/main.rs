@@ -391,12 +391,6 @@ fn estimate_author_time(mut commits: Vec<Commit>, email: Option<String>, max_com
 
     commits.sort_by(|a, b| a.time().cmp(&b.time()));
 
-    //let lalala = Utc.timestamp(commits[commits.len() - 3].time().seconds(), 0).format("%Y-%m-%d");
-    //let lilili = Utc.timestamp(commits[commits.len() - 2].time().seconds(), 0).format("%Y-%m-%d");
-    //println!("just checking two last commits");
-    //println!("{}", lalala);
-    //println!("{}", lilili);
-
     let mut coding_session_start = Utc.timestamp(commits[0].time().seconds(), 0).format("%Y-%m-%d");
     let len = commits.len() - 1;
     let all_but_last = commits.iter().enumerate().take(len);
