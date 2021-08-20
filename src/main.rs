@@ -578,7 +578,7 @@ fn print_breakdown_results_stdout(times: &Vec<CommitHours>) -> Result<()> {
 }
 
 #[derive(Clone, Serialize, Deserialize)]
-struct CommitHoursJson {
+struct CommitBreakdownHoursJson {
     email: Option<String>,
     author_name: Option<String>,
     breakdown: Option<HashMap<String, f32>>,
@@ -586,13 +586,13 @@ struct CommitHoursJson {
     commit_count: usize
 }
 
-impl From<&CommitHours> for CommitHoursJson {
+impl From<&CommitHours> for CommitBreakdownHoursJson {
     fn from(time: &CommitHours) -> Self {
         let mut breakdown = HashMap::new();
         for (key, value) in &(time.breakdown) {
             breakdown.insert(key.to_owned(), value.num_minutes() as f32 / 60.0);
         }
-        CommitHoursJson {
+        CommitBreakdownHoursJson {
             email: time.email.clone(),
             author_name: time.author_name.clone(),
             breakdown: Some(breakdown),
@@ -602,6 +602,44 @@ impl From<&CommitHours> for CommitHoursJson {
     }
 }
 
+#[derive(Clone, Serialize, Deserialize)]
+struct CommitHoursJson {
+    email: Option<String>,
+    author_name: Option<String>,
+    hours: f32,
+    commit_count: usize
+}
+
+impl From<&CommitHours> for CommitHoursJson {
+    fn from(time: &CommitHours) -> Self {
+        CommitHoursJson {
+            email: time.email.clone(),
+            author_name: time.author_name.clone(),
+            hours: time.duration.num_minutes() as f32 / 60.0,
+            commit_count: time.commit_count,
+        }
+    }
+}
+
+fn print_breakdown_results_json(times: &Vec<CommitHours>) -> Result<()> {
+    let mut times_json = times.iter().map(CommitBreakdownHoursJson::from).collect::<Vec<_>>();
+
+    let (total_estimated_hours, total_commits) = get_totals(times);
+    times_json.push(CommitBreakdownHoursJson {
+        email: None,
+        author_name: Some(String::from("Total")),
+        breakdown: None,
+        hours: total_estimated_hours,
+        commit_count: total_commits
+    });
+
+    let json = serde_json::to_string_pretty(&times_json)?;
+
+    println!("{}", json);
+
+    Ok(())
+}
+
 fn print_results_json(times: &Vec<CommitHours>) -> Result<()> {
     let mut times_json = times.iter().map(CommitHoursJson::from).collect::<Vec<_>>();
 
@@ -609,7 +647,6 @@ fn print_results_json(times: &Vec<CommitHours>) -> Result<()> {
     times_json.push(CommitHoursJson {
         email: None,
         author_name: Some(String::from("Total")),
-        breakdown: None,
         hours: total_estimated_hours,
         commit_count: total_commits
     });
@@ -627,7 +664,10 @@ fn print_results(times: &Vec<CommitHours>, output_format: &OutputFormat, display
             true => print_breakdown_results_stdout(times),
             false => print_results_stdout(times)
         },
-        OutputFormat::Json => print_results_json(times)
+        OutputFormat::Json => match *display_breakdown {
+            true => print_breakdown_results_json(times),
+            false => print_results_json(times)
+        }
     }
 }
 
