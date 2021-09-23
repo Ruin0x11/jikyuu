@@ -489,7 +489,7 @@ fn get_totals(times: &Vec<CommitHours>) -> (f32, usize) {
     (total_estimated_hours, total_commits)
 }
 
-fn print_results_stdout(times: &Vec<CommitHours>) -> Result<()> {
+fn print_results_stdout(times: &Vec<CommitHours>,  display_breakdown: &bool) -> Result<()> {
     let mut table = Table::new();
 
     let format = format::FormatBuilder::new()
@@ -501,49 +501,12 @@ fn print_results_stdout(times: &Vec<CommitHours>) -> Result<()> {
         .padding(1, 1)
         .build();
     table.set_format(format);
-
-    table.set_titles(row!["Author", "Email", "Commits", "Estimated Hours"]);
-    table.add_empty_row();
-
-    for time in times.iter() {
-        let author = match &time.author_name {
-            Some(n) => n,
-            None => ""
-        };
-        let email = match &time.email {
-            Some(email) => email,
-            None => "(none)"
-        };
-        let commits = time.commit_count;
-        let estimated_hours = (time.duration.num_minutes() as f32) / 60.0;
-
-        table.add_row(row![author, email, commits, estimated_hours]);
+    if *display_breakdown {
+        table.set_titles(row!["Author", "Email", "Commits", "Date", "Estimated Hours"]);
+    } else {
+        table.set_titles(row!["Author", "Email", "Commits", "Estimated Hours"]);
     }
-
-    table.add_empty_row();
-
-    let (total_estimated_hours, total_commits) = get_totals(times);
-    table.add_row(row!["Total", "", total_commits, total_estimated_hours]);
-
-    table.printstd();
-
-    Ok(())
-}
-
-fn print_breakdown_results_stdout(times: &Vec<CommitHours>) -> Result<()> {
-    let mut table = Table::new();
-
-    let format = format::FormatBuilder::new()
-        .column_separator('|')
-        .borders('|')
-        .separators(&[format::LinePosition::Top,
-                      format::LinePosition::Bottom],
-                    format::LineSeparator::new('-', '+', '+', '+'))
-        .padding(1, 1)
-        .build();
-    table.set_format(format);
-
-    table.set_titles(row!["Author", "Email", "Commits", "Date", "Estimated Hours"]);
+    ;
     table.add_empty_row();
 
     for time in times.iter() {
@@ -558,44 +521,42 @@ fn print_breakdown_results_stdout(times: &Vec<CommitHours>) -> Result<()> {
         let commits = time.commit_count;
         let estimated_total_hours = (time.duration.num_minutes() as f32) / 60.0;
 
-        for (date, duration) in &(time.breakdown) {
-            let date = date.to_owned();
-            let work_time = duration.num_minutes() as f32 / 60.0;
-            table.add_row(row!["", "", "", date, work_time]);
+        if *display_breakdown {
+            for (date, duration) in &(time.breakdown) {
+                let date = date.to_owned();
+                let work_time = duration.num_minutes() as f32 / 60.0;
+                table.add_row(row!["", "", "", date, work_time]);
+            }
+            table.add_row(row![author, email, commits, "Total", estimated_total_hours]);
+            table.add_empty_row();
+        } else {
+            table.add_row(row![author, email, commits, estimated_total_hours]);
         }
-        table.add_row(row![author, email, commits, "Total", estimated_total_hours]);
-        table.add_empty_row();
     }
 
     table.add_empty_row();
 
     let (total_estimated_hours, total_commits) = get_totals(times);
-    table.add_row(row!["Total", "", total_commits, "", total_estimated_hours]);
+    table.add_row(row!["Total", "", total_commits, total_estimated_hours]);
 
     table.printstd();
 
     Ok(())
 }
 
-#[derive(Clone, Serialize, Deserialize)]
-struct CommitBreakdownHoursJson {
-    email: Option<String>,
-    author_name: Option<String>,
-    breakdown: Option<HashMap<String, f32>>,
-    hours: f32,
-    commit_count: usize
-}
-
-impl From<&CommitHours> for CommitBreakdownHoursJson {
+impl From<&CommitHours> for CommitHoursJson {
     fn from(time: &CommitHours) -> Self {
+        // how to apply this section of code conditionally
+        // only if time.breakdown is defined?
         let mut breakdown = HashMap::new();
-        for (key, value) in &(time.breakdown) {
+        for (key, value) in &time.breakdown {
             breakdown.insert(key.to_owned(), value.num_minutes() as f32 / 60.0);
         }
-        CommitBreakdownHoursJson {
+        // end of relevant section
+        CommitHoursJson {
             email: time.email.clone(),
             author_name: time.author_name.clone(),
-            breakdown: Some(breakdown),
+            breakdown: Some(breakdown), // how to not include that field when not relvant?
             hours: time.duration.num_minutes() as f32 / 60.0,
             commit_count: time.commit_count,
         }
@@ -606,38 +567,9 @@ impl From<&CommitHours> for CommitBreakdownHoursJson {
 struct CommitHoursJson {
     email: Option<String>,
     author_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")] breakdown: Option<HashMap<String, f32>>,
     hours: f32,
     commit_count: usize
-}
-
-impl From<&CommitHours> for CommitHoursJson {
-    fn from(time: &CommitHours) -> Self {
-        CommitHoursJson {
-            email: time.email.clone(),
-            author_name: time.author_name.clone(),
-            hours: time.duration.num_minutes() as f32 / 60.0,
-            commit_count: time.commit_count,
-        }
-    }
-}
-
-fn print_breakdown_results_json(times: &Vec<CommitHours>) -> Result<()> {
-    let mut times_json = times.iter().map(CommitBreakdownHoursJson::from).collect::<Vec<_>>();
-
-    let (total_estimated_hours, total_commits) = get_totals(times);
-    times_json.push(CommitBreakdownHoursJson {
-        email: None,
-        author_name: Some(String::from("Total")),
-        breakdown: None,
-        hours: total_estimated_hours,
-        commit_count: total_commits
-    });
-
-    let json = serde_json::to_string_pretty(&times_json)?;
-
-    println!("{}", json);
-
-    Ok(())
 }
 
 fn print_results_json(times: &Vec<CommitHours>) -> Result<()> {
@@ -647,12 +579,11 @@ fn print_results_json(times: &Vec<CommitHours>) -> Result<()> {
     times_json.push(CommitHoursJson {
         email: None,
         author_name: Some(String::from("Total")),
+        breakdown: None,
         hours: total_estimated_hours,
         commit_count: total_commits
     });
-
     let json = serde_json::to_string_pretty(&times_json)?;
-
     println!("{}", json);
 
     Ok(())
@@ -660,14 +591,8 @@ fn print_results_json(times: &Vec<CommitHours>) -> Result<()> {
 
 fn print_results(times: &Vec<CommitHours>, output_format: &OutputFormat, display_breakdown: &bool) -> Result<()> {
     match output_format {
-        OutputFormat::Stdout => match *display_breakdown {
-            true => print_breakdown_results_stdout(times),
-            false => print_results_stdout(times)
-        },
-        OutputFormat::Json => match *display_breakdown {
-            true => print_breakdown_results_json(times),
-            false => print_results_json(times)
-        }
+        OutputFormat::Stdout => print_results_stdout(times, display_breakdown),
+        OutputFormat::Json => print_results_json(times)
     }
 }
 
