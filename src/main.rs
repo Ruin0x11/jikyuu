@@ -133,7 +133,10 @@ struct Config {
     branch_type: BranchType,
 
     /// Output format.
-    output_format: OutputFormat
+    output_format: OutputFormat,
+
+    // Display breakdown
+    display_breakdown: bool
 }
 
 fn get_app<'a, 'b>() -> App<'a, 'b> {
@@ -205,6 +208,11 @@ fn get_app<'a, 'b>() -> App<'a, 'b> {
              .required(true)
              .default_value(".")
              .index(1))
+        .arg(Arg::with_name("breakdown")
+            .long("breakdown")
+            .short("w")
+            .help("Display number of work hours per day.")
+            .takes_value(false))
 }
 
 fn parse_email_alias(s: &str) -> Result<(String, String)> {
@@ -292,6 +300,7 @@ fn to_config(matches: ArgMatches) -> Result<Config> {
     };
 
     let merge_requests = matches.is_present("merge-requests");
+    let display_breakdown = matches.is_present("breakdown");
 
     let git_repo_path = matches.value_of("REPO_PATH").unwrap();
 
@@ -331,7 +340,8 @@ fn to_config(matches: ArgMatches) -> Result<Config> {
         email_aliases: aliases,
         branch: branch,
         branch_type: branch_type,
-        output_format: output_format
+        output_format: output_format,
+        display_breakdown: display_breakdown
     })
 }
 
@@ -371,6 +381,7 @@ fn filter_commits<'repo>(config: &Config, commits: Vec<Commit<'repo>>) -> Vec<Co
 struct CommitHours {
     email: Option<String>,
     author_name: Option<String>,
+    breakdown: HashMap<String, Duration>,
     duration: Duration,
     commit_count: usize
 }
@@ -380,23 +391,38 @@ fn estimate_author_time(mut commits: Vec<Commit>, email: Option<String>, max_com
 
     commits.sort_by(|a, b| a.time().cmp(&b.time()));
 
+    let mut coding_session_start = Utc.timestamp(commits[0].time().seconds(), 0).format("%Y-%m-%d");
     let len = commits.len() - 1;
     let all_but_last = commits.iter().enumerate().take(len);
-    let duration = all_but_last.fold(Duration::minutes(0), |acc, (i, commit)| {
+    let mut breakdown = HashMap::new();
+    breakdown.entry(coding_session_start.to_string())
+        .or_insert_with(|| *first_commit_addition);
+
+    for (i, commit) in all_but_last {
         let next_commit = commits.get(i+1).unwrap();
         let diff_seconds = next_commit.time().seconds() - commit.time().seconds();
         let dur = Duration::seconds(diff_seconds);
 
         if dur < *max_commit_diff {
-            acc + dur
+            breakdown.entry(coding_session_start.to_string())
+                .and_modify(|e| { *e = *e + dur })
+                .or_insert_with(|| dur);
         } else {
-            acc + *first_commit_addition
+            coding_session_start = Utc.timestamp(next_commit.time().seconds(), 0).format("%Y-%m-%d");
+            breakdown.entry(coding_session_start.to_string())
+                .and_modify(|e| { *e = *e + *first_commit_addition })
+                .or_insert_with(|| *first_commit_addition);
         }
+    };
+
+    let duration = breakdown.values().fold(Duration::minutes(0), |acc, dur| {
+        acc + *dur
     });
 
     CommitHours {
         email: email,
         author_name: author_name,
+        breakdown: breakdown,
         duration: duration,
         commit_count: commits.len()
     }
@@ -463,7 +489,7 @@ fn get_totals(times: &Vec<CommitHours>) -> (f32, usize) {
     (total_estimated_hours, total_commits)
 }
 
-fn print_results_stdout(times: &Vec<CommitHours>) -> Result<()> {
+fn print_results_stdout(times: &Vec<CommitHours>,  display_breakdown: &bool) -> Result<()> {
     let mut table = Table::new();
 
     let format = format::FormatBuilder::new()
@@ -475,8 +501,12 @@ fn print_results_stdout(times: &Vec<CommitHours>) -> Result<()> {
         .padding(1, 1)
         .build();
     table.set_format(format);
-
-    table.set_titles(row!["Author", "Email", "Commits", "Estimated Hours"]);
+    if *display_breakdown {
+        table.set_titles(row!["Author", "Email", "Commits", "Date", "Estimated Hours"]);
+    } else {
+        table.set_titles(row!["Author", "Email", "Commits", "Estimated Hours"]);
+    }
+    ;
     table.add_empty_row();
 
     for time in times.iter() {
@@ -489,9 +519,19 @@ fn print_results_stdout(times: &Vec<CommitHours>) -> Result<()> {
             None => "(none)"
         };
         let commits = time.commit_count;
-        let estimated_hours = (time.duration.num_minutes() as f32) / 60.0;
+        let estimated_total_hours = (time.duration.num_minutes() as f32) / 60.0;
 
-        table.add_row(row![author, email, commits, estimated_hours]);
+        if *display_breakdown {
+            for (date, duration) in &(time.breakdown) {
+                let date = date.to_owned();
+                let work_time = duration.num_minutes() as f32 / 60.0;
+                table.add_row(row!["", "", "", date, work_time]);
+            }
+            table.add_row(row![author, email, commits, "Total", estimated_total_hours]);
+            table.add_empty_row();
+        } else {
+            table.add_row(row![author, email, commits, estimated_total_hours]);
+        }
     }
 
     table.add_empty_row();
@@ -504,23 +544,32 @@ fn print_results_stdout(times: &Vec<CommitHours>) -> Result<()> {
     Ok(())
 }
 
-#[derive(Clone, Serialize, Deserialize)]
-struct CommitHoursJson {
-    email: Option<String>,
-    author_name: Option<String>,
-    hours: f32,
-    commit_count: usize
-}
-
 impl From<&CommitHours> for CommitHoursJson {
     fn from(time: &CommitHours) -> Self {
+        // how to apply this section of code conditionally
+        // only if time.breakdown is defined?
+        let mut breakdown = HashMap::new();
+        for (key, value) in &time.breakdown {
+            breakdown.insert(key.to_owned(), value.num_minutes() as f32 / 60.0);
+        }
+        // end of relevant section
         CommitHoursJson {
             email: time.email.clone(),
             author_name: time.author_name.clone(),
+            breakdown: Some(breakdown), // how to not include that field when not relvant?
             hours: time.duration.num_minutes() as f32 / 60.0,
             commit_count: time.commit_count,
         }
     }
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+struct CommitHoursJson {
+    email: Option<String>,
+    author_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")] breakdown: Option<HashMap<String, f32>>,
+    hours: f32,
+    commit_count: usize
 }
 
 fn print_results_json(times: &Vec<CommitHours>) -> Result<()> {
@@ -530,20 +579,19 @@ fn print_results_json(times: &Vec<CommitHours>) -> Result<()> {
     times_json.push(CommitHoursJson {
         email: None,
         author_name: Some(String::from("Total")),
+        breakdown: None,
         hours: total_estimated_hours,
         commit_count: total_commits
     });
-
     let json = serde_json::to_string_pretty(&times_json)?;
-
     println!("{}", json);
 
     Ok(())
 }
 
-fn print_results(times: &Vec<CommitHours>, output_format: &OutputFormat) -> Result<()> {
+fn print_results(times: &Vec<CommitHours>, output_format: &OutputFormat, display_breakdown: &bool) -> Result<()> {
     match output_format {
-        OutputFormat::Stdout => print_results_stdout(times),
+        OutputFormat::Stdout => print_results_stdout(times, display_breakdown),
         OutputFormat::Json => print_results_json(times)
     }
 }
@@ -572,7 +620,7 @@ fn jikyuu(config: &Config) -> Result<ExitCode> {
         }
         Ok(1)
     } else {
-        print_results(&by_author, &config.output_format)?;
+        print_results(&by_author, &config.output_format, &config.display_breakdown)?;
         Ok(0)
     }
 }
