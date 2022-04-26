@@ -121,7 +121,7 @@ OPTIONS:
             Associate all commits that have a secondary email with a primary email
 
     -a, --first-commit-add <MINUTES>
-            How many minutes first commit of session should add to total [default: 120]
+            How many minutes first commit of session should add to total [default: 30]
 
     -f, --format <format>
              [default: stdout]  [possible values: Stdout, Json]
